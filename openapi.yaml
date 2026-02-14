@@ -1,0 +1,599 @@
+openapi: 3.0.3
+info:
+  title: PayNow Payment API
+  description: |
+    A simple payment application providing APIs to create payments and manage webhooks.
+    
+    ## Features
+    - Create payments with encrypted card information
+    - Register dynamic webhooks for payment notifications
+    - Webhook notifications with resilience and retry mechanism
+    
+    ## Security
+    - Card numbers are encrypted using AES encryption before storage
+    - All sensitive data is properly masked in responses
+    
+    ## Webhook Notifications
+    After each payment is created, all active webhooks receive a POST request with payment details.
+    The webhook notification includes retry mechanism with exponential backoff (3 attempts).
+    
+  version: 1.0.0
+  contact:
+    name: Douglas Barros
+    email: dbs.douglas@gmail.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8080/api
+    description: Local development server
+  - url: http://localhost:8080/api
+    description: Docker container server
+
+tags:
+  - name: Payments
+    description: Payment management operations
+  - name: Webhooks
+    description: Webhook registration and management operations
+
+paths:
+  /payments:
+    post:
+      tags:
+        - Payments
+      summary: Create a new payment
+      description: Creates a new payment with encrypted card information and triggers webhook notifications
+      operationId: createPayment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+            examples:
+              validPayment:
+                summary: Valid payment request
+                value:
+                  firstName: John
+                  lastName: Doe
+                  zipCode: "12345"
+                  cardNumber: "4532015112830366"
+              validPaymentWithExtendedZip:
+                summary: Payment with extended zip code
+                value:
+                  firstName: Jane
+                  lastName: Smith
+                  zipCode: "12345-6789"
+                  cardNumber: "5425233430109903"
+      responses:
+        '201':
+          description: Payment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              examples:
+                successfulPayment:
+                  summary: Successful payment creation
+                  value:
+                    id: "550e8400-e29b-41d4-a716-446655440000"
+                    firstName: John
+                    lastName: Doe
+                    zipCode: "12345"
+                    maskedCardNumber: "************0366"
+                    status: PROCESSED
+                    createdAt: "2026-02-13T10:30:00Z"
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidInput:
+                  summary: Invalid input error
+                  value:
+                    timestamp: "2026-02-13T10:30:00Z"
+                    status: 400
+                    error: Bad Request
+                    message: Invalid input data
+                    path: /api/payments
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationError:
+                  summary: Validation error
+                  value:
+                    timestamp: "2026-02-13T10:30:00Z"
+                    status: 422
+                    error: Validation Error
+                    message: "First name is required, Card number must be 13-19 digits"
+                    path: /api/payments
+    
+    get:
+      tags:
+        - Payments
+      summary: Get all payments
+      description: Retrieves all payments from the system
+      operationId: getAllPayments
+      responses:
+        '200':
+          description: List of payments retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentResponse'
+              examples:
+                paymentsList:
+                  summary: List of payments
+                  value:
+                    - id: "550e8400-e29b-41d4-a716-446655440000"
+                      firstName: John
+                      lastName: Doe
+                      zipCode: "12345"
+                      maskedCardNumber: "************0366"
+                      status: PROCESSED
+                      createdAt: "2026-02-13T10:30:00Z"
+                    - id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+                      firstName: Jane
+                      lastName: Smith
+                      zipCode: "67890"
+                      maskedCardNumber: "************9903"
+                      status: PROCESSED
+                      createdAt: "2026-02-13T11:45:00Z"
+
+  /payments/{id}:
+    get:
+      tags:
+        - Payments
+      summary: Get payment by ID
+      description: Retrieves a payment by its unique identifier
+      operationId: getPaymentById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Payment unique identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        '200':
+          description: Payment found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              examples:
+                paymentFound:
+                  summary: Payment details
+                  value:
+                    id: "550e8400-e29b-41d4-a716-446655440000"
+                    firstName: John
+                    lastName: Doe
+                    zipCode: "12345"
+                    maskedCardNumber: "************0366"
+                    status: PROCESSED
+                    createdAt: "2026-02-13T10:30:00Z"
+        '404':
+          description: Payment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                notFound:
+                  summary: Payment not found
+                  value:
+                    timestamp: "2026-02-13T10:30:00Z"
+                    status: 404
+                    error: Not Found
+                    message: "Payment not found with id: 550e8400-e29b-41d4-a716-446655440000"
+                    path: /api/payments/550e8400-e29b-41d4-a716-446655440000
+
+  /webhooks:
+    post:
+      tags:
+        - Webhooks
+      summary: Register a new webhook
+      description: Registers a webhook endpoint to receive payment notifications
+      operationId: registerWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterWebhookRequest'
+            examples:
+              validWebhook:
+                summary: Valid webhook registration
+                value:
+                  endpointUrl: "https://webhook.site/unique-url"
+              localWebhook:
+                summary: Local webhook for testing
+                value:
+                  endpointUrl: "http://localhost:3001/webhook"
+      responses:
+        '201':
+          description: Webhook registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+              examples:
+                webhookRegistered:
+                  summary: Webhook registered
+                  value:
+                    id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+                    endpointUrl: "https://webhook.site/unique-url"
+                    active: true
+                    createdAt: "2026-02-13T10:30:00Z"
+                    updatedAt: "2026-02-13T10:30:00Z"
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                validationError:
+                  summary: Invalid URL format
+                  value:
+                    timestamp: "2026-02-13T10:30:00Z"
+                    status: 422
+                    error: Validation Error
+                    message: "Endpoint URL must start with http:// or https://"
+                    path: /api/webhooks
+    
+    get:
+      tags:
+        - Webhooks
+      summary: Get all webhooks
+      description: Retrieves all registered webhooks
+      operationId: getAllWebhooks
+      responses:
+        '200':
+          description: List of webhooks retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/WebhookResponse'
+              examples:
+                webhooksList:
+                  summary: List of webhooks
+                  value:
+                    - id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+                      endpointUrl: "https://webhook.site/unique-url-1"
+                      active: true
+                      createdAt: "2026-02-13T10:30:00Z"
+                      updatedAt: "2026-02-13T10:30:00Z"
+                    - id: "8d0f7780-8536-51ef-b18c-f01ed2g01bf8"
+                      endpointUrl: "https://webhook.site/unique-url-2"
+                      active: false
+                      createdAt: "2026-02-13T11:00:00Z"
+                      updatedAt: "2026-02-13T12:00:00Z"
+
+  /webhooks/{id}:
+    get:
+      tags:
+        - Webhooks
+      summary: Get webhook by ID
+      description: Retrieves a webhook by its unique identifier
+      operationId: getWebhookById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Webhook unique identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+      responses:
+        '200':
+          description: Webhook found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+              examples:
+                webhookFound:
+                  summary: Webhook details
+                  value:
+                    id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+                    endpointUrl: "https://webhook.site/unique-url"
+                    active: true
+                    createdAt: "2026-02-13T10:30:00Z"
+                    updatedAt: "2026-02-13T10:30:00Z"
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    
+    delete:
+      tags:
+        - Webhooks
+      summary: Delete webhook
+      description: Deletes a webhook by its unique identifier
+      operationId: deleteWebhook
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Webhook unique identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+      responses:
+        '204':
+          description: Webhook deleted successfully
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /webhooks/{id}/activate:
+    patch:
+      tags:
+        - Webhooks
+      summary: Activate webhook
+      description: Activates a webhook to start receiving notifications
+      operationId: activateWebhook
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Webhook unique identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+      responses:
+        '200':
+          description: Webhook activated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+              examples:
+                webhookActivated:
+                  summary: Webhook activated
+                  value:
+                    id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+                    endpointUrl: "https://webhook.site/unique-url"
+                    active: true
+                    createdAt: "2026-02-13T10:30:00Z"
+                    updatedAt: "2026-02-13T14:30:00Z"
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /webhooks/{id}/deactivate:
+    patch:
+      tags:
+        - Webhooks
+      summary: Deactivate webhook
+      description: Deactivates a webhook to stop receiving notifications
+      operationId: deactivateWebhook
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Webhook unique identifier (UUID)
+          schema:
+            type: string
+            format: uuid
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+      responses:
+        '200':
+          description: Webhook deactivated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookResponse'
+              examples:
+                webhookDeactivated:
+                  summary: Webhook deactivated
+                  value:
+                    id: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+                    endpointUrl: "https://webhook.site/unique-url"
+                    active: false
+                    createdAt: "2026-02-13T10:30:00Z"
+                    updatedAt: "2026-02-13T15:30:00Z"
+        '404':
+          description: Webhook not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    CreatePaymentRequest:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - zipCode
+        - cardNumber
+      properties:
+        firstName:
+          type: string
+          description: First name of the payment holder
+          minLength: 1
+          example: John
+        lastName:
+          type: string
+          description: Last name of the payment holder
+          minLength: 1
+          example: Doe
+        zipCode:
+          type: string
+          description: Zip code (format: 12345 or 12345-6789)
+          pattern: '^\d{5}(-\d{4})?$'
+          example: "12345"
+        cardNumber:
+          type: string
+          description: Card number (13-19 digits, will be encrypted)
+          pattern: '^\d{13,19}$'
+          example: "4532015112830366"
+
+    PaymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique payment identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        firstName:
+          type: string
+          description: First name of the payment holder
+          example: John
+        lastName:
+          type: string
+          description: Last name of the payment holder
+          example: Doe
+        zipCode:
+          type: string
+          description: Zip code
+          example: "12345"
+        maskedCardNumber:
+          type: string
+          description: Masked card number for display
+          example: "************0366"
+        status:
+          type: string
+          enum: [PENDING, PROCESSED, FAILED]
+          description: Payment status
+          example: PROCESSED
+        createdAt:
+          type: string
+          format: date-time
+          description: Payment creation timestamp
+          example: "2026-02-13T10:30:00Z"
+
+    RegisterWebhookRequest:
+      type: object
+      required:
+        - endpointUrl
+      properties:
+        endpointUrl:
+          type: string
+          format: uri
+          description: Webhook endpoint URL (must start with http:// or https://)
+          pattern: '^https?://.*'
+          example: "https://webhook.site/unique-url"
+
+    WebhookResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique webhook identifier
+          example: "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+        endpointUrl:
+          type: string
+          format: uri
+          description: Webhook endpoint URL
+          example: "https://webhook.site/unique-url"
+        active:
+          type: boolean
+          description: Whether the webhook is active
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          description: Webhook creation timestamp
+          example: "2026-02-13T10:30:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          description: Webhook last update timestamp
+          example: "2026-02-13T10:30:00Z"
+
+    PaymentWebhookPayload:
+      type: object
+      description: Payload sent to webhooks when a payment is created
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+          description: Payment unique identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        firstName:
+          type: string
+          description: First name of the payment holder
+          example: John
+        lastName:
+          type: string
+          description: Last name of the payment holder
+          example: Doe
+        zipCode:
+          type: string
+          description: Zip code
+          example: "12345"
+        status:
+          type: string
+          enum: [PENDING, PROCESSED, FAILED]
+          description: Payment status
+          example: PROCESSED
+        createdAt:
+          type: string
+          format: date-time
+          description: Payment creation timestamp
+          example: "2026-02-13T10:30:00Z"
+        eventType:
+          type: string
+          description: Type of event
+          example: payment.created
+
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
+          example: "2026-02-13T10:30:00Z"
+        status:
+          type: integer
+          description: HTTP status code
+          example: 400
+        error:
+          type: string
+          description: Error type
+          example: Bad Request
+        message:
+          type: string
+          description: Error message
+          example: Invalid input data
+        path:
+          type: string
+          description: Request path
+          example: /api/payments

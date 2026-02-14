@@ -1,0 +1,22 @@
+target/classes/
+target/generated-sources/
+target/generated-test-sources/
+target/maven-archiver/
+target/maven-status/
+target/surefire-reports/
+target/test-classes/
+*.class
+*.log
+!target/*.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Test
+src/test/
+
+# Docs
+*.md
+!README.md

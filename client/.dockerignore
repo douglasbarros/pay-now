@@ -1,0 +1,26 @@
+node_modules/
+.next/
+out/
+dist/
+.cache/
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+.env*.local
+
+# Testing
+coverage/
+
+# Misc
+.DS_Store
+*.md
+!README.md
