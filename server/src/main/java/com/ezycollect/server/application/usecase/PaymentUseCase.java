@@ -22,6 +22,7 @@ import java.util.UUID;
  */
 public class PaymentUseCase {
 
+    private static final String FRAUD_NAME_EXAMPLE = "aaa";
     private final PaymentRepository paymentRepository;
     private final EncryptionService encryptionService;
     private final WebhookNotificationService webhookNotificationService;
@@ -93,7 +94,8 @@ public class PaymentUseCase {
      */
     private void processPayment(Payment payment) {
         // Fraud detection logic
-        if ("aaa".equals(payment.getFirstName()) && "aaa".equals(payment.getLastName())) {
+        if (FRAUD_NAME_EXAMPLE.equals(payment.getFirstName())
+                && FRAUD_NAME_EXAMPLE.equals(payment.getLastName())) {
             throw new RuntimeException("Fraud detected");
         }
 
