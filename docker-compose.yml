@@ -3,18 +3,17 @@ version: '3.8'
 services:
   # MySQL Database
   mysql:
-    image: mysql:8.0
+    build:
+      context: ./mysql
+      dockerfile: Dockerfile
     container_name: ezycollect-mysql
     environment:
       MYSQL_ROOT_PASSWORD: root_password
       MYSQL_DATABASE: ezycollect
       MYSQL_USER: ezycollect_user
       MYSQL_PASSWORD: ezycollect_password
-    ports:
-      - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./server/src/main/resources/db/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - ezycollect-network
     healthcheck:
