@@ -27,6 +27,9 @@ public class OpenApiConfig {
                                 .servers(List.of(new Server().url("http://localhost:8081")
                                                 .description("Local development server"),
                                                 new Server().url("http://207.244.255.183:8081")
-                                                                .description("Homologation server")));
+                                                                .description("Homologation server"),
+                                                new Server().url(
+                                                                "https://paynow-api.dbsinfosolutions.com/")
+                                                                .description("Production server")));
         }
 }
